@@ -95,6 +95,15 @@ nav.qnav .btn{flex:1}
 .toast{position:fixed;left:50%;bottom:30px;transform:translateX(-50%);background:#222;color:#fff;
   padding:10px 18px;border-radius:22px;font-size:14px;opacity:0;transition:.25s;z-index:99;pointer-events:none}
 .toast.show{opacity:.95}
+.gridnum{display:grid;grid-template-columns:repeat(7,1fr);gap:9px;margin-top:14px;
+  max-height:58vh;overflow:auto;padding:4px 2px}
+.numbtn{aspect-ratio:1;border-radius:50%;border:1.5px solid var(--line);background:#fff;
+  display:flex;align-items:center;justify-content:center;font-size:14px;cursor:pointer;color:var(--sub)}
+.numbtn:hover{border-color:var(--brand)}
+.numbtn.right{border-color:var(--ok);color:var(--ok)}
+.numbtn.wrong{border-color:var(--bad);color:var(--bad)}
+.numbtn.cur{border-color:var(--brand);background:#eaf0ff;color:var(--brand2);font-weight:700;
+  box-shadow:0 0 0 3px #d8e4ff}
 </style>
 </head>
 <body>
@@ -155,9 +164,22 @@ nav.qnav .btn{flex:1}
     </div>
     <nav class="qnav">
       <button class="btn ghost" onclick="prevQ()">上一题</button>
-      <button class="btn ghost" onclick="showView('v-home')">退出</button>
+      <button class="btn ghost" onclick="openGrid()">☰ 选题</button>
       <button class="btn" onclick="nextQ()">下一题</button>
     </nav>
+  </section>
+
+  <!-- 题号选择面板 -->
+  <section id="v-grid" class="hidden">
+    <div class="card">
+      <div class="row" style="justify-content:space-between">
+        <b>选择题目</b>
+        <button class="btn ghost" onclick="closeGrid()">返回做题</button>
+      </div>
+      <div class="muted" id="gridStat" style="margin-top:6px"></div>
+      <div class="gridnum" id="gridBox"></div>
+      <button class="btn big ghost" onclick="showView('v-home')">退出本组</button>
+    </div>
   </section>
 
   <!-- 错题列表 -->
@@ -228,11 +250,18 @@ function isWrong(id){return P.wrong.includes(id);}
 
 // ---------- 视图切换 ----------
 function showView(v){
-  ['v-home','v-quiz','v-wrong','v-set'].forEach(x=>$(x).classList.add('hidden'));
+  ['v-home','v-quiz','v-wrong','v-set','v-grid'].forEach(x=>$(x).classList.add('hidden'));
   $(v).classList.remove('hidden');
   if(v==='v-home') renderHome();
   if(v==='v-set') fillCfg();
   window.scrollTo(0,0);
+}
+
+// ---------- 做题位置记忆 ----------
+const SKEY='jdquiz.session.v1';
+function loadSession(){try{return JSON.parse(localStorage.getItem(SKEY)||'{}');}catch(e){return{};}}
+function saveSession(){
+  localStorage.setItem(SKEY,JSON.stringify({mode:cur.mode,ch:cur.ch,idx:cur.idx}));
 }
 
 // ---------- 首页 ----------
@@ -249,33 +278,63 @@ function renderHome(){
   Object.keys(CHMAP).forEach(ch=>{
     const list=BANK.filter(q=>q.ch===ch);
     const dn=list.filter(q=>P.state[q.id]).length;
+    const s=loadSession();
+    let meta=dn+'/'+list.length+' 已做';
+    if(s.mode==='chapter'&&s.ch===ch&&dn>0) meta+=' · 继续第'+(Math.min(s.idx||0,list.length-1)+1)+'题';
     const d=document.createElement('div');d.className='ch';
-    d.innerHTML=`<div class="name">${ch}</div><div class="meta">${dn}/${list.length} 已做</div>`;
+    d.innerHTML=`<div class="name">${ch}</div><div class="meta">${meta}</div>`;
     d.onclick=()=>startChapter(ch);
     g.appendChild(d);
   });
 }
 
 // ---------- 出题 ----------
-let cur={list:[],idx:0,answered:false};
+let cur={list:[],idx:0,answered:false,mode:'',ch:''};
 function buildList(filter){return BANK.filter(filter).map(q=>q.id);}
 function startChapter(ch){
-  cur.list=buildList(q=>q.ch===ch); cur.idx=0; showQ();
+  const list=buildList(q=>q.ch===ch);
+  let idx=0; const s=loadSession();
+  if(s.mode==='chapter'&&s.ch===ch) idx=Math.min(s.idx||0, list.length-1);
+  cur={list,idx,mode:'chapter',ch}; showQ();
 }
 function startRandom(){
-  cur.list=buildList(q=>!P.state[q.id]);
-  if(!cur.list.length){toast('没有未做的题目啦');return;}
-  cur.idx=0; showQ();
+  const list=buildList(q=>!P.state[q.id]);
+  if(!list.length){toast('没有未做的题目啦');return;}
+  let idx=0; const s=loadSession();
+  if(s.mode==='random') idx=Math.min(s.idx||0, list.length-1);
+  cur={list,idx,mode:'random',ch:''}; showQ();
 }
 function startWrong(){
-  cur.list=P.wrong.slice();
-  if(!cur.list.length){toast('错题本是空的');showView('v-home');return;}
-  cur.idx=0; showQ();
+  const list=P.wrong.slice();
+  if(!list.length){toast('错题本是空的');showView('v-home');return;}
+  let idx=0; const s=loadSession();
+  if(s.mode==='wrong') idx=Math.min(s.idx||0, list.length-1);
+  cur={list,idx,mode:'wrong',ch:''}; showQ();
 }
 function byId(id){return BANK.find(q=>q.id===id);}
 
+// ---------- 题号选择面板 ----------
+function openGrid(){
+  showView('v-grid');
+  const box=$('gridBox');box.innerHTML='';
+  cur.list.forEach((id,i)=>{
+    const b=document.createElement('button');b.className='numbtn';
+    b.textContent=i+1;
+    const st=P.state[id];
+    if(i===cur.idx)b.classList.add('cur');
+    else if(st&&st.correct)b.classList.add('right');
+    else if(isWrong(id))b.classList.add('wrong');
+    b.onclick=()=>{cur.idx=i;saveSession();closeGrid();showQ();};
+    box.appendChild(b);
+  });
+  const done=cur.list.filter(id=>P.state[id]).length;
+  $('gridStat').textContent='共'+cur.list.length+'题 · 当前第'+(cur.idx+1)+'题 · 已做'+done+'（蓝=当前 绿=对 红=错）';
+}
+function closeGrid(){showView('v-quiz');}
+
 function showQ(){
   showView('v-quiz');
+  saveSession();
   cur.answered=false;
   const q=byId(cur.list[cur.idx]);
   $('qCh').textContent=q.ch+' · '+({choice:'选择题',judge:'判断题',blank:'填空题',essay:'简答题'})[q.t];
