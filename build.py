@@ -237,6 +237,7 @@ function dec(s){const b=atob(s).split('').map(c=>c.charCodeAt(0)^KEY);
 function $(id){return document.getElementById(id)}
 function toast(t){const e=$('toast');e.textContent=t;e.classList.add('show');
   clearTimeout(e._t);e._t=setTimeout(()=>e.classList.remove('show'),1800);}
+function shuffle(a){for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}}
 
 const CHMAP={};
 BANK.forEach(q=>{CHMAP[q.ch]=(CHMAP[q.ch]||0)+1;});
@@ -346,15 +347,25 @@ function showQ(){
   $('essayRate').classList.add('hidden');
   $('ansbox').className='ansbox';$('ansbox').innerHTML='';
   if(q.t==='choice'){
-    Object.keys(q.o).sort().forEach(k=>{
+    // 选项随机打乱，正确答案跟随内容，避免背位置
+    const ansLetter=dec(q.a);
+    const rightText=q.o[ansLetter];
+    const texts=Object.keys(q.o).sort().map(k=>q.o[k]);
+    shuffle(texts);
+    const letters=['A','B','C','D'];
+    texts.forEach((txt,idx)=>{
+      const k=letters[idx];
       const b=document.createElement('button');b.className='opt';
       b.innerHTML=`<span class="k">${k}</span><span></span>`;
-      b.querySelector('span:last-child').textContent=q.o[k];
+      b.querySelector('span:last-child').textContent=txt;
+      b.dataset.right=(txt===rightText)?'1':'0';
       b.onclick=()=>pickChoice(q,k,b);
       box.appendChild(b);
     });
   }else if(q.t==='judge'){
-    [['对（√）','T'],['错（×）','F']].forEach(([txt,val])=>{
+    let pairs=[['对（√）','T'],['错（×）','F']];
+    if(Math.random()<0.5)pairs=pairs.reverse();
+    pairs.forEach(([txt,val])=>{
       const b=document.createElement('button');b.className='opt';
       b.innerHTML=`<span class="k">${val==='T'?'√':'×'}</span><span></span>`;
       b.querySelector('span:last-child').textContent=txt;
@@ -384,14 +395,15 @@ function lastCorrect(c){return c;}
 
 function pickChoice(q,k,btn){
   if(cur.answered)return;cur.answered=true;
-  const ans=dec(q.a);
+  const right=(btn.dataset.right==='1');
   const opts=[...$('opts').children];
   opts.forEach(b=>b.disabled=true);
-  const right=(k===ans);
   if(right){btn.classList.add('right');}
   else{btn.classList.add('wrong');
-    opts.forEach(b=>{if(b.querySelector('.k').textContent===ans)b.classList.add('right');});}
-  showAns(right,'正确答案：'+ans);
+    opts.forEach(b=>{if(b.dataset.right==='1')b.classList.add('right');});}
+  const rightText=opts.find(b=>b.dataset.right==='1').querySelector('span:last-child').textContent;
+  showAns(right,'回答正确 ✔');
+  if(!right)showAns(false,'答错了，正确答案：'+rightText);
   record(q,right);
 }
 function pickJudge(q,val,btn){
